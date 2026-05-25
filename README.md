@@ -51,13 +51,16 @@ The hard part was getting the regex parsers right. Apache log format has like 5 
 
 ## Commands
 
-```
-loganomaly generate           # create synthetic logs
-loganomaly analyze <file>     # parse + run detection
-loganomaly full-run           # do everything in one shot
+```bash
+loganomaly generate                     # create synthetic logs
+loganomaly analyze <file>               # parse + run detection (auto-detects format)
+loganomaly analyze /var/log/auth.log    # works with real logs too
+loganomaly full-run                     # do everything in one shot
 ```
 
-Flags: `--type ssh|web|syslog`, `--explain`, `--window 5` (minutes), `--contamination 0.05`
+Flags: `--type ssh|web|syslog|auto`, `--explain`, `--window 5`, `--contamination 0.05`
+
+It auto-detects the log format by reading the first 20 lines and trying each parser. So you can just point it at a real auth.log or access.log and it figures out what to do.
 
 ## Install
 
@@ -90,7 +93,6 @@ Each file is under 300 lines. Generator uses weighted random choices to make nor
 
 ## What I'd add next
 
-- Real log file support (parsing actual /var/log/auth.log)
 - Autoencoder option with PyTorch
 - A mode that tails a log file in real-time
 

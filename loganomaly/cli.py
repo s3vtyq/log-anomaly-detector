@@ -16,7 +16,7 @@ import pandas as pd
 
 from . import __version__
 from .generator import generate_dataset
-from .features import parse_log_file, extract_features, extract_features_from_file
+from .features import parse_log_file, extract_features, extract_features_from_file, detect_log_type
 from .detector import DetectorConfig, detect_anomalies, get_anomaly_summary, explain_anomaly
 from .reporter import (
     print_banner,
@@ -108,7 +108,11 @@ def analyze(logfile, log_type, window, contamination, show_windows, export, expl
     start = time.time()
 
     console.print(f"[bold]Analyzing:[/] {logfile}")
-    console.print(f"  Log type: {log_type}")
+    if log_type == "auto":
+        detected = detect_log_type(logfile)
+        console.print(f"  Detected format: [cyan]{detected}[/]")
+    else:
+        console.print(f"  Log type: [cyan]{log_type}[/]")
     console.print(f"  Window: {window} min | Contamination: {contamination:.0%}")
     console.print()
 

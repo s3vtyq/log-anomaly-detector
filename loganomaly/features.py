@@ -149,16 +149,66 @@ PARSERS = {"ssh": _parse_ssh, "web": _parse_web, "syslog": _parse_syslog}
 
 # ── Aggregation-based Features ────────────────────────────────
 
+def detect_log_type(path: str, sample_lines: int = 20) -> str:
+    """Auto-detect log type by trying each parser on sample lines.
+
+    Reads the first N lines of a file and checks which parser
+    matches the most lines.
+
+    Returns: 'ssh', 'web', 'syslog', or 'unknown'.
+    """
+    scores = {"ssh": 0, "web": 0, "syslog": 0}
+    try:
+        with open(path) as f:
+            for i, line in enumerate(f):
+                if i >= sample_lines:
+                    break
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                for log_type, parser in PARSERS.items():
+                    if parser(line, log_type) is not None:
+                        scores[log_type] += 1
+    except (FileNotFoundError, OSError):
+        return "unknown"
+
+    # Return type with highest match count
+    max_type = max(scores, key=scores.get)
+    if scores[max_type] == 0:
+        return "unknown"
+    # If web and ssh/syslog are similar, prefer the dominant one
+    total = sum(scores.values())
+    if total > 0 and scores[max_type] / total >= 0.3:
+        return max_type
+    return "unknown"
+
+
 def parse_log_file(path: str, log_type: str = "auto") -> pd.DataFrame:
     """Parse a log file into a DataFrame of raw events.
 
     Args:
         path: Path to the log file.
-        log_type: One of 'ssh', 'web', 'syslog', or 'auto' (detect from header).
+        log_type: One of 'ssh', 'web', 'syslog', or 'auto' (detect from format).
 
     Returns:
         DataFrame with parsed features, one row per log line.
     """
+    # Auto-detect format if needed
+    detected_type = log_type
+    if detected_type == "auto":
+        # First check if it's a labeled synthetic file
+        with open(path) as f:
+            first_line = f.readline().strip()
+        if first_line.startswith("ssh "):
+            detected_type = "ssh"
+        elif first_line.startswith("web "):
+            detected_type = "web"
+        elif first_line.startswith("syslog "):
+            detected_type = "syslog"
+        else:
+            # Not labeled → try parser-based detection
+            detected_type = detect_log_type(path)
+
     records = []
     with open(path) as f:
         for line in f:
@@ -166,17 +216,13 @@ def parse_log_file(path: str, log_type: str = "auto") -> pd.DataFrame:
             if not line:
                 continue
 
-            # Handle labeled files (first word is label)
-            detected_type = log_type
-            if detected_type == "auto":
-                if line.startswith("ssh "):
-                    detected_type = "ssh"
+            # Handle labeled synthetic files (strip label prefix)
+            if log_type == "auto":
+                if line.startswith("ssh ") and detected_type == "ssh":
                     line = line[4:]
-                elif line.startswith("web "):
-                    detected_type = "web"
+                elif line.startswith("web ") and detected_type == "web":
                     line = line[4:]
-                elif line.startswith("syslog "):
-                    detected_type = "syslog"
+                elif line.startswith("syslog ") and detected_type == "syslog":
                     line = line[7:]
 
             # Skip header lines
@@ -191,7 +237,19 @@ def parse_log_file(path: str, log_type: str = "auto") -> pd.DataFrame:
             if record:
                 records.append(record)
 
-    return pd.DataFrame(records)
+    df = pd.DataFrame(records)
+    if df.empty:
+        import warnings
+        hints = {
+            "ssh": "SSH auth logs contain 'sshd' entries",
+            "web": "Web logs follow Apache Combined format (IP - - [date] ...)",
+            "syslog": "Syslog has facility: message format",
+            "unknown": "Could not detect log format",
+        }
+        warnings.warn(f"No events parsed from {path}. "
+                      f"Detected type: {detected_type}. "
+                      f"Hint: {hints.get(detected_type, '')}")
+    return df
 
 
 def extract_features(
