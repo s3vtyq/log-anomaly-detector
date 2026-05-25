@@ -1,8 +1,6 @@
 # log-anomaly-detector
 
-I got tired of seeing security tools that need a PhD to set up, so I built something that just runs.
-
-It generates fake SSH, web, and system logs, then throws Isolation Forest at them to find anomalies. Everything is synthetic — you don't need a server, don't need real logs, don't need labeled data. Just `pip install` and go.
+Generates fake SSH, web, and system logs, then runs Isolation Forest to find anomalies. Everything is synthetic — no server, no real logs, no labeled data needed. Just `pip install` and go.
 
 ## What it looks like
 
