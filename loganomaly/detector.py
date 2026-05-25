@@ -151,3 +151,99 @@ def get_anomaly_summary(result: DetectionResult) -> dict[str, Any]:
                 .mean().to_dict(),
         },
     }
+
+
+def explain_anomaly(
+    result: DetectionResult,
+    window_index: int = 0,
+) -> str:
+    """Generate a human-readable explanation for an anomalous window.
+
+    Args:
+        result: Detection result from detect_anomalies().
+        window_index: Which anomalous window to explain (0 = most anomalous).
+
+    Returns:
+        Human-readable explanation string.
+    """
+    if result.anomaly_windows.empty:
+        return "No anomalies to explain."
+
+    sorted_anoms = result.anomaly_windows.sort_values("anomaly_score")
+    if window_index >= len(sorted_anoms):
+        window_index = 0
+
+    row = sorted_anoms.iloc[window_index]
+
+    # Compute per-feature deviations
+    all_data = pd.concat([result.normal_windows, result.anomaly_windows])
+    means = all_data[result.feature_columns].mean()
+    stds = all_data[result.feature_columns].std().replace(0, 1)
+
+    anom_values = row[result.feature_columns]
+    z_scores = ((anom_values - means).abs() / stds).sort_values(ascending=False)
+
+    # Build explanation
+    window_time = row.get("window", "unknown")
+    score = row.get("anomaly_score", 0)
+    total_events = row.get("total_count", 0)
+
+    lines = [
+        f"Window: {window_time}  (anomaly score: {score:.4f})",
+        f"Total events in this window: {int(total_events)}",
+        "",
+        "Why this window is anomalous:",
+    ]
+
+    # Explain top 5 features driving the deviation
+    for feat, z in z_scores.head(5).items():
+        z = round(z, 2)
+        actual = anom_values.get(feat, 0)
+        normal_mean = means.get(feat, 0)
+        direction = "higher" if actual > normal_mean else "lower"
+
+        if "count_" in feat:
+            t = feat.replace("count_", "").upper()
+            lines.append(
+                f"  \u2022 {t} event count is {direction} than normal "
+                f"(actual: {actual:.1f}, normal: {normal_mean:.2f}, z={z})"
+            )
+        elif "error_rate" in feat:
+            t = feat.replace("error_rate_", "").upper()
+            lines.append(
+                f"  \u2022 {t} error rate is {direction} than normal "
+                f"(actual: {actual:.1%}, normal: {normal_mean:.2%}, z={z})"
+            )
+        elif "unique_ips" in feat:
+            t = feat.replace("unique_ips_", "").upper()
+            lines.append(
+                f"  \u2022 {t} IP diversity is {direction} than normal "
+                f"(z-score: {z})"
+            )
+        elif "suspicious" in feat:
+            lines.append(
+                f"  \u2022 Suspicious {feat} is {direction} "
+                f"(z-score: {z})"
+            )
+        else:
+            lines.append(
+                f"  \u2022 {feat} is {direction} than normal (z-score: {z})"
+            )
+
+    # Classify the anomaly type
+    z_count_ssh = z_scores.get("count_ssh", 0)
+    z_critical = z_scores.get("is_critical", 0)
+    z_susp_path = z_scores.get("is_suspicious_path", 0)
+    z_susp_agent = z_scores.get("is_suspicious_agent", 0)
+
+    lines.append("")
+    if z_count_ssh > 1.5:
+        lines.append("\U0001f50d Assessment: Possible SSH brute-force attack")
+    elif z_critical > 1.5:
+        lines.append("\U0001f50d Assessment: Possible system compromise or service failure")
+    elif z_susp_path > 1.5 or z_susp_agent > 1.5:
+        lines.append("\U0001f50d Assessment: Possible web application scanning")
+    else:
+        lines.append("\U0001f50d Assessment: Unusual pattern — review the feature deviations above")
+
+    return "\n".join(lines)

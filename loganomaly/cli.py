@@ -17,7 +17,7 @@ import pandas as pd
 from . import __version__
 from .generator import generate_dataset
 from .features import parse_log_file, extract_features, extract_features_from_file
-from .detector import DetectorConfig, detect_anomalies, get_anomaly_summary
+from .detector import DetectorConfig, detect_anomalies, get_anomaly_summary, explain_anomaly
 from .reporter import (
     print_banner,
     print_detection_summary,
@@ -25,6 +25,7 @@ from .reporter import (
     print_log_preview,
     console,
 )
+from rich.panel import Panel
 
 
 @click.group()
@@ -95,7 +96,9 @@ def generate(output_dir, total_events, anomaly_ratio, days, seed):
               help="Show extracted feature windows")
 @click.option("--export", "-e", type=click.Path(),
               help="Export features to CSV")
-def analyze(logfile, log_type, window, contamination, show_windows, export):
+@click.option("--explain", is_flag=True,
+              help="Show detailed explanation of why each anomaly was flagged")
+def analyze(logfile, log_type, window, contamination, show_windows, export, explain):
     """Analyze a log file for anomalies.
 
     Parses the log, extracts time-windowed features, and runs
@@ -134,6 +137,13 @@ def analyze(logfile, log_type, window, contamination, show_windows, export):
 
     elapsed = time.time() - start
     print_detection_summary(result, elapsed)
+
+    if explain:
+        console.print("\n[bold magenta]═══ Anomaly Explanations ═══[/]")
+        for i in range(min(5, len(result.anomaly_windows))):
+            explanation = explain_anomaly(result, i)
+            console.print(Panel(explanation, border_style="yellow", width=72))
+            console.print()
 
 
 @cli.command()
