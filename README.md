@@ -94,6 +94,4 @@ Each file is under 300 lines. Generator uses weighted random choices to make nor
 - Autoencoder option with PyTorch
 - A mode that tails a log file in real-time
 
-But honestly it works well enough for a portfolio piece.
-
 MIT. Fork it if you want.
